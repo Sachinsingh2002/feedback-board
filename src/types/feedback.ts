@@ -6,5 +6,5 @@ export type FeedbackEntry = {
   product: string;
   feedback: string;
   rating: number; // 1-5
-  createdAt: Date;
+  createdAt: Date | string; // Supabase stores as string
 };

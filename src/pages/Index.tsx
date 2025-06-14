@@ -4,6 +4,7 @@
 import React from "react";
 import { StarRating } from "@/components/StarRating";
 import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 const PRODUCTS = [
   "Widget Pro",
@@ -33,7 +34,7 @@ const Index = () => {
           ? "Please select a rating."
           : "";
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (error) {
       setTouched({feedback:true, rating:true});
@@ -44,30 +45,45 @@ const Index = () => {
       return;
     }
     setIsSubmitting(true);
-    // Store in frontend for demo; in real app, send to backend
-    setTimeout(() => {
-      // Fire a browser event for the dashboard to "catch"
-      const entry = {
-        id: randomId(),
-        name: name.trim(),
-        email: email.trim(),
-        product,
-        feedback,
-        rating,
-        createdAt: new Date(),
-      };
-      window.dispatchEvent(new CustomEvent("add-feedback", {detail: entry}));
-      setIsSubmitting(false);
-      setFeedback("");
-      setRating(0);
-      setProduct(PRODUCTS[0]);
-      setName("");
-      setEmail("");
+    // Store in Supabase
+    const entry = {
+      name: name.trim() || null,
+      email: email.trim() || null,
+      product,
+      feedback,
+      rating,
+    };
+    const { data, error: err } = await supabase
+      .from("feedback")
+      .insert([entry])
+      .select()
+      .single();
+
+    if (err) {
       toast({
-        title: "Thanks for your feedback!",
-        description: "Your feedback was submitted successfully.",
+        title: "Error",
+        description: "There was a problem submitting your feedback.",
       });
-    }, 900);
+      setIsSubmitting(false);
+      return;
+    }
+
+    // Fire a browser event for the dashboard to "catch"
+    window.dispatchEvent(new CustomEvent("add-feedback", { detail: {
+      ...data,
+      createdAt: data.created_at ? new Date(data.created_at) : new Date(),
+      id: data.id,
+    }}));
+    setIsSubmitting(false);
+    setFeedback("");
+    setRating(0);
+    setProduct(PRODUCTS[0]);
+    setName("");
+    setEmail("");
+    toast({
+      title: "Thanks for your feedback!",
+      description: "Your feedback was submitted successfully.",
+    });
   }
 
   return (

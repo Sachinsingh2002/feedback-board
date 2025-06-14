@@ -1,12 +1,11 @@
-
 import React from "react";
 import { FeedbackEntry } from "@/types/feedback";
-import { mockFeedback } from "@/mock/feedback";
 import { FeedbackTable } from "@/components/FeedbackTable";
 import FeedbackStats from "@/components/FeedbackStats";
 import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 const products = [
   "Widget Pro",
@@ -30,21 +29,42 @@ function getChartData(feedbacks: FeedbackEntry[]) {
 }
 
 export default function Dashboard() {
-  // In real app, this would be loaded via API w/ live updates.
-  const [feedbacks, setFeedbacks] = useState<FeedbackEntry[]>(mockFeedback);
+  const [feedbacks, setFeedbacks] = useState<FeedbackEntry[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Sort + filter
   const [sortBy, setSortBy] = useState<"date" | "rating">("date");
   const [productFilter, setProductFilter] = useState<string | null>(null);
 
-  let shownFeedbacks = [...feedbacks];
-  if (productFilter) shownFeedbacks = shownFeedbacks.filter(f => f.product === productFilter);
-  if (sortBy === "rating") shownFeedbacks.sort((a, b) => b.rating - a.rating);
-  else shownFeedbacks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  // Load feedbacks from Supabase
+  useEffect(() => {
+    async function fetchFeedback() {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("feedback")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) {
+        toast({ title: "Failed to load feedback", description: error.message });
+        setLoading(false);
+        return;
+      }
+      // Fix fields to match FeedbackEntry
+      const parsed = data.map((item: any) => ({
+        id: item.id,
+        name: item.name ?? undefined,
+        email: item.email ?? undefined,
+        product: item.product,
+        feedback: item.feedback,
+        rating: item.rating,
+        createdAt: item.created_at ? new Date(item.created_at) : new Date(),
+      }));
+      setFeedbacks(parsed);
+      setLoading(false);
+    }
+    fetchFeedback();
 
-  // Simulate real-time
-  React.useEffect(() => {
-    // Listen for new feedback via browser event (for demo—could be via WS in real app)
+    // Listen for new feedback via browser event (keep real-time add from Index page working)
     const handler = (ev: any) => {
       if (!ev.detail) return;
       setFeedbacks((f) => [ev.detail, ...f]);
@@ -56,6 +76,15 @@ export default function Dashboard() {
     window.addEventListener("add-feedback", handler);
     return () => window.removeEventListener("add-feedback", handler);
   }, []);
+
+  let shownFeedbacks = [...feedbacks];
+  if (productFilter) shownFeedbacks = shownFeedbacks.filter(f => f.product === productFilter);
+  if (sortBy === "rating") shownFeedbacks.sort((a, b) => b.rating - a.rating);
+  else shownFeedbacks.sort((a, b) => {
+    const at = typeof a.createdAt === "string" ? new Date(a.createdAt).getTime() : a.createdAt.getTime();
+    const bt = typeof b.createdAt === "string" ? new Date(b.createdAt).getTime() : b.createdAt.getTime();
+    return bt - at;
+  });
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
@@ -99,7 +128,11 @@ export default function Dashboard() {
         </LineChart>
       </ResponsiveContainer>
       <div className="mt-8">
-        <FeedbackTable feedbacks={shownFeedbacks} />
+        {loading ? (
+          <div className="py-10 text-center text-muted-foreground">Loading feedback…</div>
+        ) : (
+          <FeedbackTable feedbacks={shownFeedbacks} />
+        )}
       </div>
     </div>
   );
